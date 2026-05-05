@@ -5,6 +5,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from retriever import cargar_vector_store
+from retriever_dsm5 import cargar_vector_store_dsm5
 from rag_chain import cargar_llm, construir_chain
 
 # ── Pacientes válidos en el sistema ──────────────────────────────────────────
@@ -20,7 +21,7 @@ PACIENTES_VALIDOS = {
 # ── Helpers de interfaz ───────────────────────────────────────────────────────
 def imprimir_bienvenida():
     print("\n" + "="*55)
-    print("   SISTEMA RAG — HISTORIALES CLÍNICOS")
+    print("   SISTEMA RAG DUAL — HISTORIALES CLÍNICOS + DSM-5")
     print("   Hospital Universitario de Castellón")
     print("="*55)
     print("  Pacientes disponibles:")
@@ -83,12 +84,13 @@ def ejecutar_prueba_aislamiento(rag):
 
 # ── Bucle principal ───────────────────────────────────────────────────────────
 def main():
-    print("\nInicializando sistema RAG...")
-    print("Cargando base de datos vectorial y modelo LLM...\n")
+    print("\nInicializando sistema RAG dual...")
+    print("Cargando bases de datos vectoriales y modelo LLM...\n")
 
-    vs  = cargar_vector_store()
-    llm = cargar_llm()
-    rag = construir_chain(llm, vs)
+    vs_pacientes = cargar_vector_store()
+    vs_dsm5      = cargar_vector_store_dsm5()
+    llm          = cargar_llm()
+    rag          = construir_chain(llm, vs_pacientes, vs_dsm5)
 
     print("Sistema listo.\n")
     imprimir_bienvenida()
@@ -131,7 +133,7 @@ def main():
             break
 
         # Ejecutar RAG
-        print("\nBuscando en el historial y consultando al LLM...\n")
+        print("\nBuscando en historial y DSM-5, consultando al LLM...\n")
         respuesta = rag(patient_id, pregunta)
         imprimir_respuesta(patient_id, pregunta, respuesta)
 
