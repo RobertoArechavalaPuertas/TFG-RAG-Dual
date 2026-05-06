@@ -8,7 +8,7 @@ load_dotenv()
 
 CHROMA_DB_PATH  = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-NUM_RESULTADOS  = 4  # chunks a recuperar por consulta
+NUM_RESULTADOS  = 8  # chunks a recuperar por consulta
 
 
 # ── Cargar vector store (una sola vez al importar) ────────────────────────────

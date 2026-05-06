@@ -15,6 +15,11 @@ PACIENTES_VALIDOS = {
     "P003": "Rosa Maria Beltrán Ortiz",
     "P004": "Andreu Mas Castelló",
     "P005": "Esperança Tormos Vidal",
+    "P006": "Marta Esteve Climent",
+    "P007": "Adrián Ferrer Blasco",
+    "P008": "Lucía Herrero Navarro",
+    "P009": "Daniel Ortega Campos",
+    "P010": "Sara Molina Grau",
 }
 
 
@@ -105,7 +110,7 @@ def main():
         print()
 
         # Pedir patient_id
-        patient_id = input("ID del paciente (P001-P005): ").strip().upper()
+        patient_id = input("ID del paciente (P001-P010): ").strip().upper()
 
         if patient_id == "SALIR":
             print("\nSistema cerrado. Hasta luego.\n")
@@ -118,7 +123,7 @@ def main():
         # Validación — primera línea de defensa del aislamiento
         if not validar_patient_id(patient_id):
             print(f"\n  ERROR: '{patient_id}' no existe en el sistema.")
-            print(  "  IDs válidos: P001, P002, P003, P004, P005\n")
+            print(  "  IDs válidos: P001–P010\n")
             continue
 
         # Pedir pregunta
