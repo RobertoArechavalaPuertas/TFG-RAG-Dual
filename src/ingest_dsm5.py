@@ -11,7 +11,7 @@ from langchain_community.embeddings import SentenceTransformerEmbeddings
 # ── Cargar configuración desde .env ──────────────────────────────────────────
 load_dotenv()
 
-DSM5_PATH      = Path(os.getenv("DSM5_PATH", "./datos/DSM5/guia-de-consulta-del-dsm-v.pdf"))
+DSM5_PATH      = Path(os.getenv("DSM5_PATH", "./datos/DSM5/manualDSM5.pdf"))
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -21,24 +21,154 @@ EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 # Los criterios reales empiezan en la página 70 (índice 69).
 PAGINA_INICIO = 69
 
+# Las páginas 482-491 son el índice alfabético del libro (entradas tipo
+# "trastorno depresivo persistente (distimia), 108–110"). Indexarlas
+# introduce chunks completamente inútiles que contaminan los resultados.
+PAGINA_FIN = 482
+
 # Chunks más grandes que en el RAG de pacientes para preservar
 # los criterios diagnósticos A/B/C/D completos dentro del mismo chunk.
 CHUNK_SIZE    = 1200
 CHUNK_OVERLAP = 150
 
+# Código DSM-5: línea corta con formato "NNN.N (FXXX)".
+# Solo se considera código de trastorno cuando ocupa la mayor parte de la
+# línea (< 30 chars); los códigos inline en frases descriptivas se ignoran.
+_DSM_CODE_RE = re.compile(r"^\s*\d{2,3}\.\d+\s*\([A-Z]\d+[\w\.]*\)\s*$")
 
-# ── 1. LOADER — extrae texto saltando el índice de clasificación ──────────────
-def cargar_dsm5(ruta_pdf: Path) -> tuple[str, int]:
-    """Extrae texto del DSM-5 omitiendo las páginas de índice CIE."""
-    texto = ""
+# Número mínimo de páginas en las que una línea debe aparecer como primera
+# línea para considerarse running header de capítulo.
+_RUNNING_HEADER_MIN_FREQ = 4
+
+
+# ── 1. LOADER — extrae texto página a página ──────────────────────────────────
+def cargar_dsm5_paginas(ruta_pdf: Path) -> tuple[list[str], int]:
+    """Extrae el texto del DSM-5 página a página, excluyendo los índices.
+
+    Returns:
+        (lista_de_textos_por_pagina, total_paginas_pdf)
+    """
+    paginas = []
     with fitz.open(ruta_pdf) as doc:
         total_paginas = len(doc)
-        for i in range(PAGINA_INICIO, total_paginas):
-            texto += doc[i].get_text()
-    return texto, total_paginas
+        for i in range(PAGINA_INICIO, PAGINA_FIN):
+            paginas.append(doc[i].get_text())
+    return paginas, total_paginas
 
 
-# ── 2. LIMPIEZA — elimina artefactos del PDF ──────────────────────────────────
+# ── 2. LIMPIEZA DE RUNNING HEADERS ───────────────────────────────────────────
+def limpiar_running_headers(paginas: list[str]) -> tuple[list[str], set[str]]:
+    """Elimina encabezados de capítulo repetidos que contaminan los chunks.
+
+    Al concatenar páginas del PDF, los títulos de capítulo que aparecen en
+    la cabecera de cada página (running headers) quedan incrustados en medio
+    del contenido. Se identifican como la primera línea no vacía y no numérica
+    de al menos _RUNNING_HEADER_MIN_FREQ páginas distintas.
+
+    Returns:
+        (paginas_limpias, conjunto_de_headers_eliminados)
+    """
+    from collections import Counter
+
+    frecuencias: Counter = Counter()
+    for texto in paginas:
+        lineas = [l.strip() for l in texto.split("\n")
+                  if l.strip() and not l.strip().isdigit()]
+        if lineas and 5 < len(lineas[0]) < 75:
+            frecuencias[lineas[0]] += 1
+
+    running_headers = {
+        linea for linea, n in frecuencias.items()
+        if n >= _RUNNING_HEADER_MIN_FREQ
+    }
+
+    paginas_limpias = []
+    for texto in paginas:
+        lineas_filtradas = [
+            l for l in texto.split("\n")
+            if l.strip() not in running_headers
+        ]
+        paginas_limpias.append("\n".join(lineas_filtradas))
+
+    return paginas_limpias, running_headers
+
+
+# ── 3. DETECCIÓN DE TRASTORNO ─────────────────────────────────────────────────
+def detectar_trastorno_en_pagina(lineas: list[str], trastorno_previo: str) -> str:
+    """Detecta el nombre del trastorno activo en una página.
+
+    Estrategia: busca una línea que sea exclusivamente un código DSM
+    (ej. "315.32 (F80.2)") y toma la línea no vacía inmediatamente anterior
+    como nombre del trastorno. Si esa línea empieza en minúscula (fragmento
+    de frase), sube una línea más. Tomar solo 1 línea evita mezclar el
+    encabezado de capítulo con el nombre del trastorno.
+    """
+    for i, linea in enumerate(lineas):
+        if not _DSM_CODE_RE.match(linea):
+            continue
+
+        # Buscar la línea anterior no vacía y no numérica
+        candidatas = []
+        for j in range(i - 1, max(-1, i - 5), -1):
+            c = lineas[j].strip().rstrip(".")
+            if not c or c.isdigit():
+                continue
+            candidatas.append(c)
+            if len(candidatas) == 2:
+                break
+
+        if not candidatas:
+            return trastorno_previo
+
+        nombre = candidatas[0]
+        # Si la línea más cercana es un fragmento de frase (minúscula),
+        # usar la anterior como nombre del trastorno
+        if nombre[0].islower() and len(candidatas) > 1:
+            nombre = candidatas[1]
+
+        # Rechazar si sigue siendo minúscula, empieza por paréntesis
+        # (fragmento de nombre largo) o tiene menos de 2 palabras
+        if nombre[0].islower() or nombre.startswith("(") or len(nombre.split()) < 2:
+            return trastorno_previo
+
+        return nombre
+
+    return trastorno_previo
+
+
+# ── 3. SEGMENTACIÓN POR TRASTORNO ────────────────────────────────────────────
+def segmentar_por_trastorno(paginas: list[str]) -> list[tuple[str, str]]:
+    """Agrupa el texto del DSM-5 en secciones por trastorno.
+
+    Cada vez que se detecta un nuevo trastorno (via código DSM), el texto
+    acumulado hasta ese punto se cierra como una sección y se abre una nueva.
+
+    Returns:
+        Lista de tuplas (texto_seccion, nombre_trastorno).
+    """
+    trastorno_actual = "General"
+    texto_acumulado  = ""
+    secciones: list[tuple[str, str]] = []
+
+    for texto_pagina in paginas:
+        lineas = texto_pagina.split("\n")
+        nuevo_trastorno = detectar_trastorno_en_pagina(lineas, trastorno_actual)
+
+        if nuevo_trastorno != trastorno_actual:
+            if texto_acumulado.strip():
+                secciones.append((texto_acumulado, trastorno_actual))
+            trastorno_actual = nuevo_trastorno
+            texto_acumulado  = texto_pagina
+        else:
+            texto_acumulado += "\n" + texto_pagina
+
+    if texto_acumulado.strip():
+        secciones.append((texto_acumulado, trastorno_actual))
+
+    return secciones
+
+
+# ── 4. LIMPIEZA — elimina artefactos del PDF ──────────────────────────────────
 def limpiar_texto(texto: str) -> str:
     """Elimina guiones de silabeo, números de página sueltos y saltos excesivos."""
     # Guiones de silabeo del PDF (soft hyphen U+00AD)
@@ -50,7 +180,7 @@ def limpiar_texto(texto: str) -> str:
     return texto.strip()
 
 
-# ── 3. SPLITTER — trocea respetando la estructura del DSM-5 ──────────────────
+# ── 5. SPLITTER — trocea respetando la estructura del DSM-5 ──────────────────
 def trocear_dsm5(texto: str) -> list[str]:
     """Divide el texto con separadores alineados a la jerarquía del DSM-5.
 
@@ -74,10 +204,30 @@ def trocear_dsm5(texto: str) -> list[str]:
     return splitter.split_text(texto)
 
 
-# ── 4. EMBEDDINGS + VECTOR STORE — indexa en ChromaDB ────────────────────────
-def indexar_dsm5():
-    """Proceso completo: carga el PDF del DSM-5 y lo indexa en ChromaDB."""
+# ── 6. HELPERS DE INDEXACIÓN IDEMPOTENTE ─────────────────────────────────────
+def _slugify(texto: str) -> str:
+    """Convierte un nombre de trastorno en un slug válido para IDs de ChromaDB."""
+    slug = re.sub(r"[^\w\s]", "", texto.lower())
+    slug = re.sub(r"\s+", "_", slug.strip())
+    return slug[:40]  # limitar longitud
 
+
+def _conectar_vector_store(embedding_fn: SentenceTransformerEmbeddings) -> Chroma:
+    return Chroma(
+        persist_directory = CHROMA_DB_PATH,
+        embedding_function = embedding_fn,
+        collection_name    = "dsm5_guia",
+    )
+
+
+def _ya_indexado(vector_store: Chroma) -> bool:
+    """Devuelve True si la colección ya contiene chunks del DSM-5."""
+    return vector_store._collection.count() > 0
+
+
+# ── 7. INDEXACIÓN ─────────────────────────────────────────────────────────────
+def indexar_dsm5():
+    """Carga el PDF del DSM-5 y lo indexa en ChromaDB. Idempotente."""
     if not DSM5_PATH.exists():
         print(f"ERROR: No se encontró el archivo {DSM5_PATH}")
         sys.exit(1)
@@ -86,51 +236,65 @@ def indexar_dsm5():
     print(f"  Indexando DSM-5: Guía de consulta")
     print(f"{'='*50}\n")
 
-    # Paso 1 — Loader
+    print("Cargando modelo de embeddings...")
+    embedding_fn = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
+    vector_store = _conectar_vector_store(embedding_fn)
+
+    if _ya_indexado(vector_store):
+        total = vector_store._collection.count()
+        print(f"  DSM-5 ya indexado ({total} chunks). Nada que hacer.\n")
+        return vector_store
+
     print(f"Cargando PDF: {DSM5_PATH.name}")
-    texto_crudo, total_paginas = cargar_dsm5(DSM5_PATH)
-    paginas_procesadas = total_paginas - PAGINA_INICIO
-    print(f"  → Páginas omitidas (índice CIE): {PAGINA_INICIO}")
+    paginas, total_paginas = cargar_dsm5_paginas(DSM5_PATH)
+    paginas_procesadas    = PAGINA_FIN - PAGINA_INICIO
+    print(f"  → Páginas omitidas al inicio (índice CIE): {PAGINA_INICIO}")
+    print(f"  → Páginas omitidas al final (índice alfabético): {total_paginas - PAGINA_FIN}")
     print(f"  → Páginas procesadas: {paginas_procesadas}/{total_paginas}")
-    print(f"  → Texto extraído: {len(texto_crudo):,} caracteres")
 
-    # Paso 2 — Limpieza
-    texto = limpiar_texto(texto_crudo)
-    print(f"  → Texto tras limpieza: {len(texto):,} caracteres")
+    paginas, headers_eliminados = limpiar_running_headers(paginas)
+    print(f"  → Running headers eliminados: {len(headers_eliminados)}")
+    for h in sorted(headers_eliminados):
+        print(f"      · {h}")
 
-    # Paso 3 — Splitter
-    chunks = trocear_dsm5(texto)
-    longitudes = [len(c) for c in chunks]
-    print(f"  → Chunks generados: {len(chunks)}")
+    secciones = segmentar_por_trastorno(paginas)
+    print(f"  → Secciones (trastornos detectados): {len(secciones)}")
+
+    textos_batch    = []
+    metadatos_batch = []
+    ids_batch       = []
+
+    for sec_idx, (texto_seccion, trastorno) in enumerate(secciones):
+        texto_limpio = limpiar_texto(texto_seccion)
+        chunks = trocear_dsm5(texto_limpio)
+        slug = _slugify(trastorno)
+        for i, chunk in enumerate(chunks):
+            chunk_prefijado = f"[{trastorno}]\n{chunk}"
+            textos_batch.append(chunk_prefijado)
+            metadatos_batch.append({
+                "source":       "dsm5",
+                "trastorno":    trastorno,
+                "chunk_index":  i,
+                "total_chunks": len(chunks),
+            })
+            # sec_idx garantiza unicidad aunque dos secciones tengan el mismo slug
+            ids_batch.append(f"dsm5_{sec_idx:03d}_{slug}_{i:04d}")
+
+    longitudes = [len(t) for t in textos_batch]
+    print(f"  → Chunks generados: {len(textos_batch)}")
     print(f"  → Longitud media: {sum(longitudes) // len(longitudes)} chars")
     print(f"  → Longitud mín/máx: {min(longitudes)}/{max(longitudes)} chars")
 
-    # Paso 4 — Embeddings + inserción en ChromaDB
-    print("\nCargando modelo de embeddings...")
-    print("(La primera vez descarga ~90 MB, ten paciencia)\n")
-    embedding_fn = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
-
-    metadatos = [
-        {
-            "source":       "dsm5",
-            "chunk_index":  i,
-            "total_chunks": len(chunks),
-        }
-        for i in range(len(chunks))
-    ]
-
-    print("Indexando en ChromaDB (colección 'dsm5_guia')...")
-    vector_store = Chroma.from_texts(
-        texts             = chunks,
-        metadatas         = metadatos,
-        embedding         = embedding_fn,
-        persist_directory = CHROMA_DB_PATH,
-        collection_name   = "dsm5_guia",
+    print("\nIndexando en ChromaDB (colección 'dsm5_guia')...")
+    vector_store.add_texts(
+        texts     = textos_batch,
+        metadatas = metadatos_batch,
+        ids       = ids_batch,
     )
 
     print(f"\n{'='*50}")
     print(f"  ✓ Indexación DSM-5 completada")
-    print(f"  Total chunks indexados: {len(chunks)}")
+    print(f"  Total chunks indexados: {len(textos_batch)}")
     print(f"  Colección: dsm5_guia")
     print(f"  Base de datos: {CHROMA_DB_PATH}")
     print(f"{'='*50}\n")

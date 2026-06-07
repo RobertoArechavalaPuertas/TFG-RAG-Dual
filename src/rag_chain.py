@@ -46,7 +46,6 @@ prompt = PromptTemplate(
 
 # ── Inicializar LLM ───────────────────────────────────────────────────────────
 def cargar_llm() -> OllamaLLM:
-    """Conecta con Qwen 2.5 corriendo en Ollama."""
     return OllamaLLM(
         model       = OLLAMA_MODEL,
         base_url    = OLLAMA_BASE_URL,
@@ -56,20 +55,15 @@ def cargar_llm() -> OllamaLLM:
 
 # ── Chain dual ────────────────────────────────────────────────────────────────
 def construir_chain(llm, vs_pacientes, vs_dsm5):
-    """Devuelve una función que recibe patient_id + pregunta y devuelve respuesta.
-
-    Recupera contexto de ambos vectorstores y los envía en una única
-    llamada al LLM, siguiendo el diseño del tutor académico.
-    """
+    """Devuelve una función que recibe patient_id + pregunta y devuelve respuesta."""
 
     def chain(patient_id: str, pregunta: str) -> str:
-        # Paso 1: recuperar contexto del historial clínico (filtrado por patient_id)
         contexto_historial = recuperar_contexto(patient_id, pregunta, vs_pacientes)
 
-        # Paso 2: recuperar contexto del DSM-5 (base global, sin filtro)
         contexto_dsm5 = recuperar_contexto_dsm5(pregunta, vs_dsm5)
+        if not contexto_dsm5:
+            contexto_dsm5 = "No hay información DSM-5 relevante para esta consulta."
 
-        # Paso 3: construir el prompt con ambos contextos
         prompt_final = prompt.format(
             patient_id         = patient_id,
             contexto_historial = contexto_historial,
@@ -77,7 +71,6 @@ def construir_chain(llm, vs_pacientes, vs_dsm5):
             pregunta           = pregunta,
         )
 
-        # Paso 4: única llamada al LLM con contexto combinado
         respuesta = llm.invoke(prompt_final)
         return respuesta.strip()
 

@@ -16,6 +16,13 @@ NUM_RESULTADOS = 4
 FETCH_K        = 20
 LAMBDA_MULT    = 0.6
 
+# Umbral de relevancia mínima (score LangChain con distancia L2).
+# Empíricamente: preguntas sobre trastornos DSM puntúan entre -1 y -4;
+# preguntas sobre medicación/analíticas del paciente (sin relación con el
+# DSM) caen por debajo de -8. El umbral evita enviar contexto DSM inútil
+# al LLM cuando la pregunta es puramente clínica (dosis, lab, seguimiento).
+MIN_SCORE = -8.0
+
 
 # ── Cargar vector store (una sola vez al importar) ────────────────────────────
 def cargar_vector_store_dsm5() -> Chroma:
@@ -32,17 +39,15 @@ def cargar_vector_store_dsm5() -> Chroma:
 def recuperar_contexto_dsm5(pregunta: str, vector_store: Chroma) -> str:
     """Busca los chunks más relevantes del DSM-5 para una pregunta.
 
-    Usa MMR en lugar de similarity_search para evitar recuperar múltiples
-    chunks casi idénticos de trastornos relacionados entre sí.
-
-    Args:
-        pregunta:     Consulta en lenguaje natural
-        vector_store: Instancia de ChromaDB con la colección 'dsm5_guia'
-
-    Returns:
-        String con los chunks más relevantes concatenados,
-        listos para usarse como contexto en el prompt.
+    Pipeline: threshold de relevancia + MMR. Devuelve cadena vacía si la
+    pregunta no tiene relevancia clínica en el DSM-5.
     """
+    top1 = vector_store.similarity_search_with_relevance_scores(
+        query=pregunta, k=1
+    )
+    if not top1 or top1[0][1] < MIN_SCORE:
+        return ""
+
     resultados = vector_store.max_marginal_relevance_search(
         query       = pregunta,
         k           = NUM_RESULTADOS,
@@ -50,11 +55,7 @@ def recuperar_contexto_dsm5(pregunta: str, vector_store: Chroma) -> str:
         lambda_mult = LAMBDA_MULT,
     )
 
-    if not resultados:
-        return "No se encontró información relevante en el DSM-5."
-
-    contexto = "\n\n---\n\n".join([doc.page_content for doc in resultados])
-    return contexto
+    return "\n\n---\n\n".join([doc.page_content for doc in resultados])
 
 
 # ── Prueba rápida (solo se ejecuta con: python3 src/retriever_dsm5.py) ────────
@@ -64,15 +65,19 @@ if __name__ == "__main__":
     print("Listo.\n")
 
     pruebas = [
-        "criterios diagnósticos para la depresión mayor",
-        "síntomas del trastorno de ansiedad generalizada",
-        "criterios para el diagnóstico de diabetes tipo 2",  # fuera de ámbito
+        ("DSM",      "criterios diagnósticos para la depresión mayor"),
+        ("DSM",      "síntomas del trastorno de ansiedad generalizada"),
+        ("NO-DSM",   "¿Qué dosis de escitalopram toma el paciente?"),
+        ("NO-DSM",   "resultados analítica glucosa colesterol"),
     ]
 
-    for pregunta in pruebas:
+    for tipo, pregunta in pruebas:
         print(f"{'='*55}")
-        print(f"Pregunta: {pregunta}")
+        print(f"[{tipo}] {pregunta}")
         print(f"{'='*55}")
         contexto = recuperar_contexto_dsm5(pregunta, vs)
-        print(contexto[:600])
+        if contexto:
+            print(contexto[:400])
+        else:
+            print("→ Sin contexto DSM-5 (threshold no superado)")
         print()

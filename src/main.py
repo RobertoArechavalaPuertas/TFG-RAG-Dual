@@ -1,5 +1,7 @@
 import sys
 import os
+import textwrap
+import shutil
 
 # Añadir src al path para que los imports funcionen
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -10,16 +12,12 @@ from rag_chain import cargar_llm, construir_chain
 
 # ── Pacientes válidos en el sistema ──────────────────────────────────────────
 PACIENTES_VALIDOS = {
-    "P001": "Carmen Vidal Soler",
-    "P002": "Miquel Àngel Roca Fuster",
-    "P003": "Rosa Maria Beltrán Ortiz",
-    "P004": "Andreu Mas Castelló",
-    "P005": "Esperança Tormos Vidal",
+    "P001": "Carmen Ruiz Velasco",
+    "P002": "Antonio Herrera Lopez",
+    "P003": "Maria Jose Martinez Aguilar",
+    "P004": "Alejandro Vega Romero",
+    "P005": "Laura Navarro Gutierrez",
     "P006": "Marta Esteve Climent",
-    "P007": "Adrián Ferrer Blasco",
-    "P008": "Lucía Herrero Navarro",
-    "P009": "Daniel Ortega Campos",
-    "P010": "Sara Molina Grau",
 }
 
 
@@ -40,30 +38,25 @@ def imprimir_bienvenida():
 
 def imprimir_respuesta(patient_id: str, pregunta: str, respuesta: str):
     nombre = PACIENTES_VALIDOS[patient_id]
+    ancho = min(shutil.get_terminal_size().columns, 100)
     print(f"\n{'─'*55}")
     print(f"  Paciente : {patient_id} — {nombre}")
     print(f"  Pregunta : {pregunta}")
     print(f"{'─'*55}")
-    print(f"\n{respuesta}\n")
+    wrapped = "\n".join(
+        textwrap.fill(linea, width=ancho) if linea.strip() else ""
+        for linea in respuesta.split("\n")
+    )
+    print(f"\n{wrapped}\n")
 
 
 # ── Validación de patient_id ──────────────────────────────────────────────────
 def validar_patient_id(patient_id: str) -> bool:
-    """Verifica que el patient_id existe en el sistema.
-    
-    Esta es la primera línea de defensa del aislamiento:
-    si el ID no existe, la consulta no llega nunca al LLM.
-    """
     return patient_id.upper() in PACIENTES_VALIDOS
 
 
 # ── Prueba de aislamiento ─────────────────────────────────────────────────────
 def ejecutar_prueba_aislamiento(rag):
-    """Demuestra formalmente que el aislamiento por patient_id funciona.
-    
-    Pregunta algo que existe en P002 (IAM, infarto) usando el ID de P001.
-    El sistema debe responder que no encuentra esa información.
-    """
     print("\n" + "="*55)
     print("  TEST DE AISLAMIENTO")
     print("="*55)
@@ -71,7 +64,9 @@ def ejecutar_prueba_aislamiento(rag):
     print("  (información que solo existe en P002)")
     print("="*55 + "\n")
 
-    pregunta  = "¿Ha tenido este paciente algún infarto de miocardio o problema cardíaco grave?"
+    # P002 (Antonio) tiene esquizofrenia; P001 (Carmen) no.
+    # Preguntar a P001 sobre esquizofrenia debe devolver que no hay información.
+    pregunta  = "¿Tiene este paciente diagnóstico de esquizofrenia o episodios psicóticos?"
     respuesta = rag("P001", pregunta)
 
     print(f"Pregunta : {pregunta}")
@@ -100,16 +95,13 @@ def main():
     print("Sistema listo.\n")
     imprimir_bienvenida()
 
-    # Preguntar si se quiere ejecutar el test de aislamiento
     respuesta_test = input("¿Ejecutar prueba de aislamiento antes de empezar? (s/n): ").strip().lower()
     if respuesta_test == "s":
         ejecutar_prueba_aislamiento(rag)
 
-    # Bucle de consultas
     while True:
         print()
 
-        # Pedir patient_id
         patient_id = input("ID del paciente (P001-P010): ").strip().upper()
 
         if patient_id == "SALIR":
@@ -120,13 +112,11 @@ def main():
             imprimir_bienvenida()
             continue
 
-        # Validación — primera línea de defensa del aislamiento
         if not validar_patient_id(patient_id):
             print(f"\n  ERROR: '{patient_id}' no existe en el sistema.")
             print(  "  IDs válidos: P001–P010\n")
             continue
 
-        # Pedir pregunta
         pregunta = input(f"Pregunta para {patient_id}: ").strip()
 
         if not pregunta:
@@ -137,7 +127,6 @@ def main():
             print("\nSistema cerrado. Hasta luego.\n")
             break
 
-        # Ejecutar RAG
         print("\nBuscando en historial y DSM-5, consultando al LLM...\n")
         respuesta = rag(patient_id, pregunta)
         imprimir_respuesta(patient_id, pregunta, respuesta)
