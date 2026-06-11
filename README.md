@@ -1,7 +1,6 @@
 # Sistema RAG Dual para Consulta de Historiales Clínicos
 
 Trabajo de Fin de Grado — Ingeniería Informática  
-Hospital Universitario de Castellón
 
 ---
 
