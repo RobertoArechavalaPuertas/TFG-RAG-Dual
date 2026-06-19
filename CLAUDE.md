@@ -84,7 +84,7 @@ All runtime paths and model settings live in `.env`:
 | `DSM5_PATH` | `./datos/DSM5/manualDSM5.pdf` | DSM-5 PDF |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `500` / `50` | Patient chunking (DSM-5 hardcodes its own) |
 
-## Current patients (P001–P006)
+## Current patients (P001–P005)
 
 | ID | Name | Main diagnosis |
 |---|---|---|
@@ -93,7 +93,6 @@ All runtime paths and model settings live in `.env`:
 | P003 | Maria Jose Martinez Aguilar | Trastorno bipolar tipo I |
 | P004 | Alejandro Vega Romero | — |
 | P005 | Laura Navarro Gutierrez | — |
-| P006 | Marta Esteve Climent | — |
 
 ## Adding a new patient
 

@@ -1,10 +1,14 @@
-# Entorno virtual — nunca se sube
+# Entorno virtual
 venv/
 
-# Base de datos vectorial — se regenera con ingest.py
+# Archivos internos de desarrollo
+CLAUDE.md
+.claude/
+
+# Base de datos vectorial
 chroma_db/
 
-# Variables de entorno — pueden contener datos sensibles
+# Variables de entorno
 .env
 
 # Archivos del sistema Mac

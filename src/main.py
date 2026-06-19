@@ -16,8 +16,7 @@ PACIENTES_VALIDOS = {
     "P002": "Antonio Herrera Lopez",
     "P003": "Maria Jose Martinez Aguilar",
     "P004": "Alejandro Vega Romero",
-    "P005": "Laura Navarro Gutierrez",
-    "P006": "Marta Esteve Climent",
+    "P005": "Laura Navarro Gutierrez"
 }
 
 
@@ -102,7 +101,7 @@ def main():
     while True:
         print()
 
-        patient_id = input("ID del paciente (P001-P010): ").strip().upper()
+        patient_id = input("ID del paciente (P001-P005): ").strip().upper()
 
         if patient_id == "SALIR":
             print("\nSistema cerrado. Hasta luego.\n")
@@ -114,7 +113,7 @@ def main():
 
         if not validar_patient_id(patient_id):
             print(f"\n  ERROR: '{patient_id}' no existe en el sistema.")
-            print(  "  IDs válidos: P001–P010\n")
+            print(  "  IDs válidos: P001–P005\n")
             continue
 
         pregunta = input(f"Pregunta para {patient_id}: ").strip()
