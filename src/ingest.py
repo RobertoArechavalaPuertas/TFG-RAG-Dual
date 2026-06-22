@@ -8,7 +8,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
-# ── Cargar configuración desde .env ──────────────────────────────────────────
+# Configuración
 load_dotenv()
 
 PACIENTES_PATH = Path(os.getenv("PACIENTES_PATH", "./datos/pacientes"))
@@ -31,9 +31,8 @@ SECCIONES = [
 ]
 
 
-# ── 1. LOADER — extrae texto de un PDF ───────────────────────────────────────
+# 1. Loader
 def cargar_pdf(ruta_pdf: Path) -> str:
-    """Abre un PDF y devuelve todo su texto como string."""
     texto = ""
     with fitz.open(ruta_pdf) as doc:
         for pagina in doc:
@@ -42,21 +41,11 @@ def cargar_pdf(ruta_pdf: Path) -> str:
 
 
 def extraer_patient_id(nombre_archivo: str) -> str:
-    """Extrae el patient_id del nombre del archivo.
-
-    Ejemplo: 'P001_Carmen_Ruiz_Velasco.pdf' → 'P001'
-    """
     return nombre_archivo.split("_")[0]
 
 
-# ── 2. SEGMENTACIÓN POR SECCIONES ────────────────────────────────────────────
+# 2. Segmentación por secciones
 def segmentar_por_secciones(texto: str) -> list[tuple[str, str]]:
-    """Divide el texto del historial en segmentos por sección clínica.
-
-    Returns:
-        Lista de tuplas (nombre_seccion, texto_seccion). Las secciones que
-        no se encuentran en el PDF se omiten silenciosamente.
-    """
     posiciones = []
     for nombre, patron in SECCIONES:
         match = re.search(patron, texto, re.IGNORECASE)
@@ -75,9 +64,8 @@ def segmentar_por_secciones(texto: str) -> list[tuple[str, str]]:
     return segmentos
 
 
-# ── 3. SPLITTER — trocea el texto en chunks ───────────────────────────────────
+# 3. Splitter
 def trocear_seccion(texto: str) -> list[str]:
-    """Divide el texto de una sección en chunks con solapamiento."""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -86,9 +74,8 @@ def trocear_seccion(texto: str) -> list[str]:
     return splitter.split_text(texto)
 
 
-# ── 4. HELPERS DE INDEXACIÓN INCREMENTAL ─────────────────────────────────────
+# 4. Helpers de indexación incremental
 def conectar_vector_store(embedding_fn: SentenceTransformerEmbeddings) -> Chroma:
-    """Conecta con la colección existente o la crea si no existe."""
     return Chroma(
         persist_directory  = CHROMA_DB_PATH,
         embedding_function = embedding_fn,
@@ -97,7 +84,6 @@ def conectar_vector_store(embedding_fn: SentenceTransformerEmbeddings) -> Chroma
 
 
 def obtener_pacientes_indexados(vector_store: Chroma) -> set[str]:
-    """Devuelve el conjunto de patient_ids ya presentes en ChromaDB."""
     result = vector_store._collection.get(include=["metadatas"])
     return {
         meta["patient_id"]
@@ -106,9 +92,8 @@ def obtener_pacientes_indexados(vector_store: Chroma) -> set[str]:
     }
 
 
-# ── 5. INDEXACIÓN INCREMENTAL ─────────────────────────────────────────────────
+# 5. Indexación incremental
 def indexar_pacientes():
-    """Indexa solo los pacientes que no están aún en ChromaDB. Idempotente."""
     if not PACIENTES_PATH.exists():
         print(f"ERROR: No se encontró la carpeta {PACIENTES_PATH}")
         sys.exit(1)
@@ -190,6 +175,6 @@ def indexar_pacientes():
     return vector_store
 
 
-# ── Punto de entrada ──────────────────────────────────────────────────────────
+# Punto de entrada
 if __name__ == "__main__":
     indexar_pacientes()

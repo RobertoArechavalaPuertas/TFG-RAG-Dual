@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
-# ── Configuración ─────────────────────────────────────────────────────────────
+# Configuración
 load_dotenv()
 
 CHROMA_DB_PATH  = os.getenv("CHROMA_DB_PATH", "./chroma_db")
@@ -24,9 +24,8 @@ LAMBDA_MULT    = 0.6
 MIN_SCORE = -8.0
 
 
-# ── Cargar vector store (una sola vez al importar) ────────────────────────────
+# Cargar vector store
 def cargar_vector_store_dsm5() -> Chroma:
-    """Conecta con la colección DSM-5 de ChromaDB ya indexada."""
     embedding_fn = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
     return Chroma(
         persist_directory  = CHROMA_DB_PATH,
@@ -35,13 +34,8 @@ def cargar_vector_store_dsm5() -> Chroma:
     )
 
 
-# ── Recuperador principal ─────────────────────────────────────────────────────
+# Recuperador principal
 def recuperar_contexto_dsm5(pregunta: str, vector_store: Chroma) -> str:
-    """Busca los chunks más relevantes del DSM-5 para una pregunta.
-
-    Pipeline: threshold de relevancia + MMR. Devuelve cadena vacía si la
-    pregunta no tiene relevancia clínica en el DSM-5.
-    """
     top1 = vector_store.similarity_search_with_relevance_scores(
         query=pregunta, k=1
     )
@@ -58,7 +52,7 @@ def recuperar_contexto_dsm5(pregunta: str, vector_store: Chroma) -> str:
     return "\n\n---\n\n".join([doc.page_content for doc in resultados])
 
 
-# ── Prueba rápida (solo se ejecuta con: python3 src/retriever_dsm5.py) ────────
+# Prueba rápida (python3 src/retriever_dsm5.py)
 if __name__ == "__main__":
     print("Cargando vector store DSM-5...")
     vs = cargar_vector_store_dsm5()

@@ -8,7 +8,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
-# ── Cargar configuración desde .env ──────────────────────────────────────────
+# Configuración
 load_dotenv()
 
 DSM5_PATH      = Path(os.getenv("DSM5_PATH", "./datos/DSM5/manualDSM5.pdf"))
@@ -41,13 +41,8 @@ _DSM_CODE_RE = re.compile(r"^\s*\d{2,3}\.\d+\s*\([A-Z]\d+[\w\.]*\)\s*$")
 _RUNNING_HEADER_MIN_FREQ = 4
 
 
-# ── 1. LOADER — extrae texto página a página ──────────────────────────────────
+# 1. Loader
 def cargar_dsm5_paginas(ruta_pdf: Path) -> tuple[list[str], int]:
-    """Extrae el texto del DSM-5 página a página, excluyendo los índices.
-
-    Returns:
-        (lista_de_textos_por_pagina, total_paginas_pdf)
-    """
     paginas = []
     with fitz.open(ruta_pdf) as doc:
         total_paginas = len(doc)
@@ -56,18 +51,8 @@ def cargar_dsm5_paginas(ruta_pdf: Path) -> tuple[list[str], int]:
     return paginas, total_paginas
 
 
-# ── 2. LIMPIEZA DE RUNNING HEADERS ───────────────────────────────────────────
+# 2. Limpieza de running headers
 def limpiar_running_headers(paginas: list[str]) -> tuple[list[str], set[str]]:
-    """Elimina encabezados de capítulo repetidos que contaminan los chunks.
-
-    Al concatenar páginas del PDF, los títulos de capítulo que aparecen en
-    la cabecera de cada página (running headers) quedan incrustados en medio
-    del contenido. Se identifican como la primera línea no vacía y no numérica
-    de al menos _RUNNING_HEADER_MIN_FREQ páginas distintas.
-
-    Returns:
-        (paginas_limpias, conjunto_de_headers_eliminados)
-    """
     from collections import Counter
 
     frecuencias: Counter = Counter()
@@ -93,16 +78,8 @@ def limpiar_running_headers(paginas: list[str]) -> tuple[list[str], set[str]]:
     return paginas_limpias, running_headers
 
 
-# ── 3. DETECCIÓN DE TRASTORNO ─────────────────────────────────────────────────
+# 3. Detección de trastorno en página
 def detectar_trastorno_en_pagina(lineas: list[str], trastorno_previo: str) -> str:
-    """Detecta el nombre del trastorno activo en una página.
-
-    Estrategia: busca una línea que sea exclusivamente un código DSM
-    (ej. "315.32 (F80.2)") y toma la línea no vacía inmediatamente anterior
-    como nombre del trastorno. Si esa línea empieza en minúscula (fragmento
-    de frase), sube una línea más. Tomar solo 1 línea evita mezclar el
-    encabezado de capítulo con el nombre del trastorno.
-    """
     for i, linea in enumerate(lineas):
         if not _DSM_CODE_RE.match(linea):
             continue
@@ -136,16 +113,8 @@ def detectar_trastorno_en_pagina(lineas: list[str], trastorno_previo: str) -> st
     return trastorno_previo
 
 
-# ── 3. SEGMENTACIÓN POR TRASTORNO ────────────────────────────────────────────
+# 4. Segmentación por trastorno
 def segmentar_por_trastorno(paginas: list[str]) -> list[tuple[str, str]]:
-    """Agrupa el texto del DSM-5 en secciones por trastorno.
-
-    Cada vez que se detecta un nuevo trastorno (via código DSM), el texto
-    acumulado hasta ese punto se cierra como una sección y se abre una nueva.
-
-    Returns:
-        Lista de tuplas (texto_seccion, nombre_trastorno).
-    """
     trastorno_actual = "General"
     texto_acumulado  = ""
     secciones: list[tuple[str, str]] = []
@@ -168,9 +137,8 @@ def segmentar_por_trastorno(paginas: list[str]) -> list[tuple[str, str]]:
     return secciones
 
 
-# ── 4. LIMPIEZA — elimina artefactos del PDF ──────────────────────────────────
+# 5. Limpieza de artefactos del PDF
 def limpiar_texto(texto: str) -> str:
-    """Elimina guiones de silabeo, números de página sueltos y saltos excesivos."""
     # Guiones de silabeo del PDF (soft hyphen U+00AD)
     texto = texto.replace("\xad", "")
     # Números de página solos al inicio de línea (p. ej. "17\n", "123\n")
@@ -180,15 +148,8 @@ def limpiar_texto(texto: str) -> str:
     return texto.strip()
 
 
-# ── 5. SPLITTER — trocea respetando la estructura del DSM-5 ──────────────────
+# 6. Splitter
 def trocear_dsm5(texto: str) -> list[str]:
-    """Divide el texto con separadores alineados a la jerarquía del DSM-5.
-
-    Prioridad de corte:
-      1. Criterios diagnósticos mayores (A., B., C. …)
-      2. Sub-criterios numerados (1., 2., 3. …)
-      3. Párrafos (\n\n), líneas, oraciones, palabras.
-    """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -204,9 +165,8 @@ def trocear_dsm5(texto: str) -> list[str]:
     return splitter.split_text(texto)
 
 
-# ── 6. HELPERS DE INDEXACIÓN IDEMPOTENTE ─────────────────────────────────────
+# 7. Helpers de indexación idempotente
 def _slugify(texto: str) -> str:
-    """Convierte un nombre de trastorno en un slug válido para IDs de ChromaDB."""
     slug = re.sub(r"[^\w\s]", "", texto.lower())
     slug = re.sub(r"\s+", "_", slug.strip())
     return slug[:40]  # limitar longitud
@@ -221,13 +181,11 @@ def _conectar_vector_store(embedding_fn: SentenceTransformerEmbeddings) -> Chrom
 
 
 def _ya_indexado(vector_store: Chroma) -> bool:
-    """Devuelve True si la colección ya contiene chunks del DSM-5."""
     return vector_store._collection.count() > 0
 
 
-# ── 7. INDEXACIÓN ─────────────────────────────────────────────────────────────
+# 8. Indexación
 def indexar_dsm5():
-    """Carga el PDF del DSM-5 y lo indexa en ChromaDB. Idempotente."""
     if not DSM5_PATH.exists():
         print(f"ERROR: No se encontró el archivo {DSM5_PATH}")
         sys.exit(1)
@@ -302,6 +260,6 @@ def indexar_dsm5():
     return vector_store
 
 
-# ── Punto de entrada ──────────────────────────────────────────────────────────
+# Punto de entrada
 if __name__ == "__main__":
     indexar_dsm5()

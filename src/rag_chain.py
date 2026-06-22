@@ -6,13 +6,13 @@ from langchain.prompts import PromptTemplate
 from retriever import cargar_vector_store, recuperar_contexto
 from retriever_dsm5 import cargar_vector_store_dsm5, recuperar_contexto_dsm5
 
-# ── Configuración ─────────────────────────────────────────────────────────────
+# Configuración
 load_dotenv()
 
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-# ── Prompt template dual ──────────────────────────────────────────────────────
+# Prompt template dual
 PROMPT_TEMPLATE = """Eres un asistente médico especializado. Dispones de dos fuentes de información:
 1. El historial clínico del paciente {patient_id}.
 2. Criterios diagnósticos y conocimiento clínico del DSM-5.
@@ -44,7 +44,7 @@ prompt = PromptTemplate(
 )
 
 
-# ── Inicializar LLM ───────────────────────────────────────────────────────────
+# Inicializar LLM
 def cargar_llm() -> OllamaLLM:
     return OllamaLLM(
         model       = OLLAMA_MODEL,
@@ -53,10 +53,8 @@ def cargar_llm() -> OllamaLLM:
     )
 
 
-# ── Chain dual ────────────────────────────────────────────────────────────────
+# Chain dual
 def construir_chain(llm, vs_pacientes, vs_dsm5):
-    """Devuelve una función que recibe patient_id + pregunta y devuelve respuesta."""
-
     def chain(patient_id: str, pregunta: str) -> str:
         contexto_historial = recuperar_contexto(patient_id, pregunta, vs_pacientes)
 
@@ -77,7 +75,7 @@ def construir_chain(llm, vs_pacientes, vs_dsm5):
     return chain
 
 
-# ── Prueba rápida ─────────────────────────────────────────────────────────────
+# Prueba rápida
 if __name__ == "__main__":
     print("Cargando vector stores y LLM...\n")
     vs_pacientes = cargar_vector_store()

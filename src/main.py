@@ -3,14 +3,13 @@ import os
 import textwrap
 import shutil
 
-# Añadir src al path para que los imports funcionen
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from retriever import cargar_vector_store
 from retriever_dsm5 import cargar_vector_store_dsm5
 from rag_chain import cargar_llm, construir_chain
 
-# ── Pacientes válidos en el sistema ──────────────────────────────────────────
+# Pacientes válidos en el sistema 
 PACIENTES_VALIDOS = {
     "P001": "Carmen Ruiz Velasco",
     "P002": "Antonio Herrera Lopez",
@@ -20,7 +19,7 @@ PACIENTES_VALIDOS = {
 }
 
 
-# ── Helpers de interfaz ───────────────────────────────────────────────────────
+# Helpers de interfaz
 def imprimir_bienvenida():
     print("\n" + "="*55)
     print("   SISTEMA RAG DUAL — HISTORIALES CLÍNICOS + DSM-5")
@@ -49,12 +48,12 @@ def imprimir_respuesta(patient_id: str, pregunta: str, respuesta: str):
     print(f"\n{wrapped}\n")
 
 
-# ── Validación de patient_id ──────────────────────────────────────────────────
+# Validación de patient_id
 def validar_patient_id(patient_id: str) -> bool:
     return patient_id.upper() in PACIENTES_VALIDOS
 
 
-# ── Prueba de aislamiento ─────────────────────────────────────────────────────
+# Prueba de aislamiento
 def ejecutar_prueba_aislamiento(rag):
     print("\n" + "="*55)
     print("  TEST DE AISLAMIENTO")
@@ -81,7 +80,7 @@ def ejecutar_prueba_aislamiento(rag):
     print("\n" + "="*55 + "\n")
 
 
-# ── Bucle principal ───────────────────────────────────────────────────────────
+# Bucle principal 
 def main():
     print("\nInicializando sistema RAG dual...")
     print("Cargando bases de datos vectoriales y modelo LLM...\n")
